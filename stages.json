@@ -1,0 +1,8 @@
+{
+  "container_start": 2,
+  "python_imports": 8,
+  "weights_to_vram": 25,
+  "cuda_init": 10,
+  "warmup": 5,
+  "restore_snapshot": 3
+}
