@@ -33,6 +33,7 @@ func run() error {
 	workers := flag.Int("workers", 2, "maximum number of GPU workers")
 	timeout := flag.Float64("idle-timeout", 30, "seconds before an idle worker scales down")
 	price := flag.Float64("gpu-cost", 2, "cost per GPU hour")
+	snapshotPrice := flag.Float64("snapshot-cost", 0.04, "storage cost per snapshot per hour")
 	service := flag.Float64("service-time", 1, "seconds a request occupies a worker")
 	firstToken := flag.Float64("first-token", 0.2, "seconds to first token on a warm worker")
 	output := flag.String("output", "results.csv", "CSV output path")
@@ -40,8 +41,8 @@ func run() error {
 	if flag.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %v", flag.Args())
 	}
-	if math.IsNaN(*price) || math.IsInf(*price, 0) || *price < 0 {
-		return fmt.Errorf("GPU cost must be finite and non-negative")
+	if math.IsNaN(*price) || math.IsInf(*price, 0) || *price < 0 || math.IsNaN(*snapshotPrice) || math.IsInf(*snapshotPrice, 0) || *snapshotPrice < 0 {
+		return fmt.Errorf("GPU and snapshot costs must be finite and non-negative")
 	}
 	durations, err := stages.Load(*config, stages.Durations{})
 	if err != nil {
@@ -79,12 +80,12 @@ func run() error {
 	}
 	var rows []metrics.Summary
 	for _, r := range runs {
-		rows = append(rows, metrics.Summarize(r, horizon, *timeout, *price))
+		rows = append(rows, metrics.Summarize(r, horizon, *timeout, *price, *snapshotPrice))
 	}
 	if err := metrics.WriteCSV(*output, rows); err != nil {
 		return err
 	}
-	fmt.Printf("\n%d requests; seed %d; observation window %.2f s; GPU cost %.2f/hour\n", len(stream.Arrivals), *seed, horizon, *price)
+	fmt.Printf("\n%d requests; seed %d; observation window %.2f s; GPU cost %.2f/hour; snapshot storage %.2f/snapshot-hour\n", len(stream.Arrivals), *seed, horizon, *price, *snapshotPrice)
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "POLICY\tP50 TTFT (s)\tP99 TTFT (s)\tCOLD STARTS\tRESTORES\tGPU HOURS\tIDLE GPU HOURS\tCOST / 1K")
 	for _, s := range rows {

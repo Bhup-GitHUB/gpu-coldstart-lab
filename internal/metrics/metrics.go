@@ -20,6 +20,7 @@ type Summary struct {
 	Restores     int
 	GPUHours     float64
 	IdleGPUHours float64
+	SnapshotCost float64
 	CostPer1000  float64
 }
 
@@ -39,7 +40,7 @@ func Percentile(values []float64, p float64) float64 {
 	return v[index]
 }
 
-func Summarize(r scheduler.Result, horizon, timeout, price float64) Summary {
+func Summarize(r scheduler.Result, horizon, timeout, price, snapshotPrice float64) Summary {
 	s := Summary{Policy: r.Policy, Requests: len(r.Latencies), P50: Percentile(r.Latencies, 0.5), P99: Percentile(r.Latencies, 0.99), ColdStarts: r.ColdStarts, Restores: r.Restores}
 	var billed, busy float64
 	for _, worker := range r.Workers {
@@ -67,8 +68,11 @@ func Summarize(r scheduler.Result, horizon, timeout, price float64) Summary {
 	}
 	s.GPUHours = billed / 3600
 	s.IdleGPUHours = math.Max(0, billed-busy) / 3600
+	if r.Policy == scheduler.Snapshot {
+		s.SnapshotCost = float64(len(r.Workers)) * horizon / 3600 * snapshotPrice
+	}
 	if s.Requests > 0 {
-		s.CostPer1000 = s.GPUHours * price * 1000 / float64(s.Requests)
+		s.CostPer1000 = (s.GPUHours*price + s.SnapshotCost) * 1000 / float64(s.Requests)
 	}
 	return s
 }
@@ -79,13 +83,13 @@ func WriteCSV(path string, rows []Summary) error {
 		return err
 	}
 	w := csv.NewWriter(file)
-	err = w.Write([]string{"policy", "requests", "p50_ttft_seconds", "p99_ttft_seconds", "cold_starts", "restores", "gpu_hours", "idle_gpu_hours", "cost_per_1000_requests"})
+	err = w.Write([]string{"policy", "requests", "p50_ttft_seconds", "p99_ttft_seconds", "cold_starts", "restores", "gpu_hours", "idle_gpu_hours", "snapshot_cost", "cost_per_1000_requests"})
 	for _, s := range rows {
 		if err != nil {
 			break
 		}
 		f := func(v float64) string { return strconv.FormatFloat(v, 'f', 6, 64) }
-		err = w.Write([]string{string(s.Policy), strconv.Itoa(s.Requests), f(s.P50), f(s.P99), strconv.Itoa(s.ColdStarts), strconv.Itoa(s.Restores), f(s.GPUHours), f(s.IdleGPUHours), f(s.CostPer1000)})
+		err = w.Write([]string{string(s.Policy), strconv.Itoa(s.Requests), f(s.P50), f(s.P99), strconv.Itoa(s.ColdStarts), strconv.Itoa(s.Restores), f(s.GPUHours), f(s.IdleGPUHours), f(s.SnapshotCost), f(s.CostPer1000)})
 	}
 	w.Flush()
 	if err == nil {
